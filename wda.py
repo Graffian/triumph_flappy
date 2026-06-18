@@ -8,12 +8,15 @@ from io import BytesIO
 import cv2
 import numpy as np
 from PIL import Image
+import threading
 import requests
 
 
 WDA_URL = "http://localhost:8100"
 COORD_SCALE = 3.0  # physical_px / logical_px — 3x for most modern iPhones
-_mjpeg_cap = None
+_mjpeg_thread = None
+_mjpeg_latest = [None]
+_mjpeg_lock = threading.Lock()
 _http = requests.Session()
 _http.headers.update({"Content-Type": "application/json"})
 _session_id = None
@@ -48,18 +51,33 @@ def get_session() -> str:
     return _session_id
 
 
-def get_mjpeg_cap():
-    global _mjpeg_cap
-    if _mjpeg_cap is None or not _mjpeg_cap.isOpened():
-        _mjpeg_cap = cv2.VideoCapture("http://localhost:9100")
-    return _mjpeg_cap
+def _mjpeg_reader():
+    buf = b""
+    r = requests.get("http://localhost:9100", stream=True, timeout=30)
+    for chunk in r.iter_content(chunk_size=4096):
+        buf += chunk
+        a = buf.find(b'\xff\xd8')   # JPEG start
+        b = buf.find(b'\xff\xd9')   # JPEG end
+        if a != -1 and b != -1 and b > a:
+            jpg = buf[a:b+2]
+            buf = buf[b+2:]
+            with _mjpeg_lock:
+                _mjpeg_latest[0] = Image.open(BytesIO(jpg)).copy()
+
+def _ensure_mjpeg():
+    global _mjpeg_thread
+    if _mjpeg_thread is None or not _mjpeg_thread.is_alive():
+        _mjpeg_thread = threading.Thread(target=_mjpeg_reader, daemon=True)
+        _mjpeg_thread.start()
 
 def take_screenshot() -> Image.Image:
-    cap = get_mjpeg_cap()
-    ret, frame = cap.read()   # frame is already BGR numpy array
-    if not ret:
-        raise RuntimeError("MJPEG stream read failed")
-    return Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    _ensure_mjpeg()
+    for _ in range(50):           # wait up to 0.5s for first frame
+        with _mjpeg_lock:
+            if _mjpeg_latest[0] is not None:
+                return _mjpeg_latest[0]
+        time.sleep(0.01)
+    raise RuntimeError("No MJPEG frame received")
 
 
 def tap(x: int, y: int):
