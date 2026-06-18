@@ -17,6 +17,7 @@ COORD_SCALE = 3.0  # physical_px / logical_px — 3x for most modern iPhones
 _mjpeg_thread = None
 _mjpeg_latest = [None]
 _mjpeg_lock = threading.Lock()
+_mjpeg_frame_count = [0]
 _http = requests.Session()
 _http.headers.update({"Content-Type": "application/json"})
 _session_id = None
@@ -63,6 +64,7 @@ def _mjpeg_reader():
             buf = buf[b+2:]
             with _mjpeg_lock:
                 _mjpeg_latest[0] = Image.open(BytesIO(jpg)).copy()
+                _mjpeg_frame_count[0] += 1
 
 def _ensure_mjpeg():
     global _mjpeg_thread
@@ -72,12 +74,14 @@ def _ensure_mjpeg():
 
 def take_screenshot() -> Image.Image:
     _ensure_mjpeg()
-    for _ in range(50):           # wait up to 0.5s for first frame
+    with _mjpeg_lock:
+        last = _mjpeg_frame_count[0]
+    for _ in range(100):   # wait up to 0.5s for a NEW frame
         with _mjpeg_lock:
-            if _mjpeg_latest[0] is not None:
+            if _mjpeg_frame_count[0] != last:
                 return _mjpeg_latest[0]
-        time.sleep(0.01)
-    raise RuntimeError("No MJPEG frame received")
+        time.sleep(0.005)
+    raise RuntimeError("No new MJPEG frame received")
 
 
 def tap(x: int, y: int):
