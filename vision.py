@@ -9,8 +9,8 @@ import numpy as np
 
 from control import CHAR_ROI, GAP_ROI, GAP_SCAN_COLUMNS
 
-SKY_HSV_LOWER = np.array([195, 20, 160], dtype=np.uint8)
-SKY_HSV_UPPER = np.array([225, 100, 255], dtype=np.uint8)
+SKY_HSV_LOWER = np.array([95, 15, 140], dtype=np.uint8)
+SKY_HSV_UPPER = np.array([130, 180, 255], dtype=np.uint8)
 
 # Set once per round by calibrate_character_colour(), reset by reset_calibration()
 CHARACTER_HSV = None
