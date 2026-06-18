@@ -98,18 +98,22 @@ def run():
         if gap_y is None:
             # no pipes — hold near vertical midpoint
             mid = (CEILING_Y_PHYSICAL + FLOOR_Y_PHYSICAL) // 2
+            n = 0
             if char_y > mid + 80:
+                n = 1
                 tap(TAP_X_LOGICAL, TAP_Y_LOGICAL)
         else:
             n = how_many_taps(char_y, gap_y)
+            # NOTE: each tap() call blocks ~80ms+ (WDA hold + round-trip).
+            # Firing more than 1 per frame at 10fps means this decision is
+            # still executing taps 2-3 frames after the read that produced it.
             for _ in range(n):
                 tap(TAP_X_LOGICAL, TAP_Y_LOGICAL)
                 time.sleep(0.02)
-            if n:
-                print(f"  x{n} TAP  char={char_y}  gap={gap_y}")
 
         elapsed = time.perf_counter() - t0
-        print(f"  frame {elapsed*1000:.0f}ms")
+        # full per-frame telemetry (not just when n>0) — needed to see *why* a death happened
+        print(f"  frame {elapsed*1000:.0f}ms  char={char_y}  gap={gap_y}  taps={n}")
 
 
 if __name__ == "__main__":

@@ -65,9 +65,12 @@ def how_many_taps(char_y: int, gap_y: int) -> int:
     signal = FLAP_KP * error + FLAP_KD * velocity
 
     if signal <= FLAP_THRESHOLD:
-        return 0
-    if signal < 80:
-        return 1
-    if signal < 160:
-        return 2
-    return min(MAX_TAPS_PER_FRAME, 3)
+        n = 0
+    elif signal < 80:
+        n = 1
+    elif signal < 160:
+        n = 2
+    else:
+        n = 3
+
+    return min(n, MAX_TAPS_PER_FRAME)  # cap now applies to every band, not just the top one
