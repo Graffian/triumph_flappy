@@ -27,6 +27,8 @@ def make_sky_mask_roi(img_bgr: np.ndarray, roi: tuple) -> np.ndarray:
 def calibrate_character_colour(img_bgr: np.ndarray) -> bool:
     """
     Auto-calibrates CHARACTER_HSV from the first clean frame (score=0, no pipes).
+    Filters low-saturation pixels so white accessories / dark outlines don't
+    blow up the HSV range.
     Returns False (try again next frame) if not enough non-sky pixels found yet.
     """
     global CHARACTER_HSV
@@ -39,6 +41,11 @@ def calibrate_character_colour(img_bgr: np.ndarray) -> bool:
     x1, y1, _, _ = CHAR_ROI
     char_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)[y1:y1 + mask.shape[0], x1:x1 + mask.shape[1]]
     pixels = char_hsv[ys, xs]
+
+    # Keep only saturated pixels — ignores white paper / dark outlines on character
+    saturated = pixels[pixels[:, 1] > 60]
+    if len(saturated) >= 5:
+        pixels = saturated
 
     lo = np.array([
         max(0, int(np.percentile(pixels[:, 0], 5)) - 15),
