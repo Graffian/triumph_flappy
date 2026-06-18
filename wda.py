@@ -5,13 +5,15 @@ wda.py — WebDriverAgent session management, screenshots, and taps.
 import base64
 import time
 from io import BytesIO
-
-import requests
+import cv2
+import numpy as np
 from PIL import Image
+import requests
+
 
 WDA_URL = "http://localhost:8100"
 COORD_SCALE = 3.0  # physical_px / logical_px — 3x for most modern iPhones
-
+_mjpeg_cap = None
 _http = requests.Session()
 _http.headers.update({"Content-Type": "application/json"})
 _session_id = None
@@ -46,26 +48,18 @@ def get_session() -> str:
     return _session_id
 
 
-def take_screenshot(retries: int = 3) -> Image.Image:
-    """Returns the current screen as a PIL Image at PHYSICAL pixel resolution."""
-    global _session_id
-    get_session()
-    for attempt in range(retries):
-        try:
-            r = _http.get(f"{WDA_URL}/session/{_session_id}/screenshot", timeout=10)
-            if r.status_code == 404:  # session died — refresh it
-                _session_id = None
-                get_session()
-                continue
-            r.raise_for_status()
-            raw = r.json().get("value", "")
-            if isinstance(raw, dict):
-                raw = raw.get("value", "")  # older WDA wraps value in value
-            return Image.open(BytesIO(base64.b64decode(raw)))
-        except Exception:
-            if attempt < retries - 1:
-                time.sleep(0.2)
-    raise RuntimeError("Screenshot failed after all retries.")
+def get_mjpeg_cap():
+    global _mjpeg_cap
+    if _mjpeg_cap is None or not _mjpeg_cap.isOpened():
+        _mjpeg_cap = cv2.VideoCapture("http://localhost:9100")
+    return _mjpeg_cap
+
+def take_screenshot() -> Image.Image:
+    cap = get_mjpeg_cap()
+    ret, frame = cap.read()   # frame is already BGR numpy array
+    if not ret:
+        raise RuntimeError("MJPEG stream read failed")
+    return Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
 
 def tap(x: int, y: int):
