@@ -42,8 +42,17 @@ def calibrate_character_colour(img_bgr: np.ndarray) -> bool:
     char_hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)[y1:y1 + mask.shape[0], x1:x1 + mask.shape[1]]
     pixels = char_hsv[ys, xs]
 
+    # Drop anything near sky-blue hue, even if saturated. A cloud edge or shaded
+    # background pixel can slip into the "non-sky" mask without being sky-coloured
+    # enough to get filtered there, but it's still not the character.
+    sky_lo_h, sky_hi_h = int(SKY_HSV_LOWER[0]), int(SKY_HSV_UPPER[0])
+    near_sky_hue = (pixels[:, 0] >= sky_lo_h - 10) & (pixels[:, 0] <= sky_hi_h + 10)
+    pixels = pixels[~near_sky_hue]
+    if len(pixels) < 5:
+        return False  # everything we found was background contamination — try next frame
+
     # Keep only saturated pixels — ignores white paper / dark outlines on character
-    saturated = pixels[pixels[:, 1] > 60]
+    saturated = pixels[pixels[:, 1] > 90]
     if len(saturated) >= 5:
         pixels = saturated
 
@@ -57,6 +66,13 @@ def calibrate_character_colour(img_bgr: np.ndarray) -> bool:
         min(255, int(np.percentile(pixels[:, 1], 95)) + 20),
         min(255, int(np.percentile(pixels[:, 2], 95)) + 20),
     ], dtype=np.uint8)
+
+    # Sanity check: the real character colour shouldn't span a huge hue range.
+    # A wide span here means contamination got through anyway — reject and retry
+    # on a later frame rather than locking in a bad calibration for the whole round.
+    if int(hi[0]) - int(lo[0]) > 60:
+        print(f"  [Calibration rejected] hue range too wide {lo} -> {hi}, retrying...")
+        return False
 
     CHARACTER_HSV = (lo, hi)
     print(f"  [Calibrated] {lo} -> {hi}")
