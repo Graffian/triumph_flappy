@@ -4,7 +4,7 @@ control.py — coordinate/ROI constants and the velocity-aware tap controller.
 
 # ── Physical pixel constants (from image analysis) ──
 CHAR_X_PHYSICAL = 280
-SCAN_HALF_WIDTH = 50
+SCAN_HALF_WIDTH = 70
 
 CEILING_Y_PHYSICAL = 283
 FLOOR_Y_PHYSICAL = 1770

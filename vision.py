@@ -52,7 +52,7 @@ def calibrate_character_colour(img_bgr: np.ndarray) -> bool:
         return False  # everything we found was background contamination — try next frame
 
     # Keep only saturated pixels — ignores white paper / dark outlines on character
-    saturated = pixels[pixels[:, 1] > 90]
+    saturated = pixels[pixels[:, 1] > 120]
     if len(saturated) >= 5:
         pixels = saturated
 
@@ -70,7 +70,9 @@ def calibrate_character_colour(img_bgr: np.ndarray) -> bool:
     # Sanity check: the real character colour shouldn't span a huge hue range.
     # A wide span here means contamination got through anyway — reject and retry
     # on a later frame rather than locking in a bad calibration for the whole round.
-    if int(hi[0]) - int(lo[0]) > 60:
+    hue_span = int(hi[0]) - int(lo[0])
+    print(f"  [hue span check] {hue_span}")
+    if hue_span > 60:
         print(f"  [Calibration rejected] hue range too wide {lo} -> {hi}, retrying...")
         return False
 
