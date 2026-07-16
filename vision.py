@@ -51,27 +51,40 @@ def calibrate_character_colour(img_bgr: np.ndarray) -> bool:
     if len(pixels) < 5:
         return False  # everything we found was background contamination — try next frame
 
-    # Keep only saturated pixels — ignores white paper / dark outlines on character
+ # Keep only saturated pixels — ignores white paper / dark outlines on character
     saturated = pixels[pixels[:, 1] > 120]
     if len(saturated) >= 5:
         pixels = saturated
 
+    # Hue is circular (0 and 179 are adjacent, both "red"). A colour that straddles
+    # that seam (reds, some oranges/pinks) will look artificially "wide" under plain
+    # min/max — so we rotate the hue values so the cluster sits away from the seam
+    # before taking percentiles, then rotate back.
+    hues = pixels[:, 0].astype(np.float64)
+    theta = hues * (2 * np.pi / 180.0)
+    mean_angle = np.arctan2(np.mean(np.sin(theta)), np.mean(np.cos(theta)))
+    mean_hue = (mean_angle * 180.0 / (2 * np.pi)) % 180.0
+    shift = (90.0 - mean_hue) % 180.0
+    shifted_hues = (hues + shift) % 180.0
+
+    lo_h = int(round((np.percentile(shifted_hues, 5) - 15 - shift) % 180.0))
+    hi_h = int(round((np.percentile(shifted_hues, 95) + 15 - shift) % 180.0))
+
     lo = np.array([
-        max(0, int(np.percentile(pixels[:, 0], 5)) - 15),
+        lo_h,
         max(0, int(np.percentile(pixels[:, 1], 5)) - 20),
         max(0, int(np.percentile(pixels[:, 2], 5)) - 20),
     ], dtype=np.uint8)
     hi = np.array([
-        min(180, int(np.percentile(pixels[:, 0], 95)) + 15),
+        hi_h,
         min(255, int(np.percentile(pixels[:, 1], 95)) + 20),
         min(255, int(np.percentile(pixels[:, 2], 95)) + 20),
     ], dtype=np.uint8)
 
-    # Sanity check: the real character colour shouldn't span a huge hue range.
-    # A wide span here means contamination got through anyway — reject and retry
-    # on a later frame rather than locking in a bad calibration for the whole round.
-    hue_span = int(hi[0]) - int(lo[0])
-    print(f"  [hue span check] {hue_span}")
+    # Circular span: distance travelling forward from lo_h to hi_h (wrapping through
+    # 0 if needed). This is the real span regardless of where the seam falls.
+    hue_span = (int(hi[0]) - int(lo[0])) % 180
+    print(f"  [hue span check] {hue_span}  lo={lo} hi={hi}")
     if hue_span > 60:
         print(f"  [Calibration rejected] hue range too wide {lo} -> {hi}, retrying...")
         return False
@@ -86,7 +99,16 @@ def reset_calibration():
     global CHARACTER_HSV
     CHARACTER_HSV = None
 
-
+def _character_mask(hsv: np.ndarray, hsv_range) -> np.ndarray:
+    """inRange that handles hue wraparound (e.g. lo=174, hi=8 for a red character)."""
+    lo, hi = hsv_range
+    if lo[0] <= hi[0]:
+        return cv2.inRange(hsv, lo, hi)
+    lower1 = np.array([lo[0], lo[1], lo[2]], dtype=np.uint8)
+    upper1 = np.array([179, hi[1], hi[2]], dtype=np.uint8)
+    lower2 = np.array([0, lo[1], lo[2]], dtype=np.uint8)
+    upper2 = np.array([hi[0], hi[1], hi[2]], dtype=np.uint8)
+    return cv2.bitwise_or(cv2.inRange(hsv, lower1, upper1), cv2.inRange(hsv, lower2, upper2))
 def detect_character_y(img_bgr: np.ndarray) -> int | None:
     """Median Y of character-coloured pixels in CHAR_ROI, in full-image coords."""
     if CHARACTER_HSV is None:
@@ -95,7 +117,7 @@ def detect_character_y(img_bgr: np.ndarray) -> int | None:
     x1, y1, x2, y2 = CHAR_ROI
     crop = img_bgr[y1:y2, x1:x2]
     hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv, CHARACTER_HSV[0], CHARACTER_HSV[1])
+    mask = _character_mask(hsv, CHARACTER_HSV)
 
     ys = np.where(mask > 0)[0]
     if len(ys) < 5:
