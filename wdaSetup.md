@@ -46,23 +46,31 @@ Alternatively, if you use Appium, it handles WDA installation automatically.
 
 ## Step 2 — Port Forwarding (USB tunnel to localhost)
 
-WDA listens on port **8100** on the device. Forward it to your machine:
+WDA listens on port **8100** for HTTP REST API requests and streams real-time screen frames via an MJPEG server on port **9100**. **Both ports must be forwarded to your machine for the bot to capture screenshots and send touch actions.**
+
+Forward both ports to your host machine:
 
 ```bash
-# Using iproxy (libimobiledevice)
+# Using iproxy (libimobiledevice on macOS/Linux)
 iproxy 8100 8100 &
+iproxy 9100 9100 &
 
-# Using tidevice
-tidevice relay 8100 8100
+# Or using tidevice (cross-platform python tool)
+tidevice relay 8100 8100 &
+tidevice relay 9100 9100 &
 ```
 
-Verify WDA is reachable:
+Verify both endpoints are reachable:
 
 ```bash
+# 1. Test WDA REST API (Port 8100)
 curl http://localhost:8100/status
+
+# 2. Test MJPEG Stream Server (Port 9100)
+curl -i http://localhost:9100
 ```
 
-A successful response contains a JSON blob with `sessionId` and device info.
+A successful status call to port 8100 returns a JSON blob with `sessionId` and device info. A successful call to port 9100 starts an `HTTP/1.1 200 OK` stream with `Content-Type: multipart/x-mixed-replace`.
 
 ---
 
